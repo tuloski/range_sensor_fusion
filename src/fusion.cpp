@@ -2,6 +2,7 @@
 
 //#include <mavros/Sonar.h>
 #include <sensor_msgs/Range.h>
+#include <geometry_msgs/PoseStamped.h>
 
 class RangefusionClass
 {
@@ -19,7 +20,8 @@ public:
 		//TODO sub to speed to calculate the point prediction?
 
 		// publishers
-		pubFusedDistance = n_.advertise<sensor_msgs::Range>("/mavros/distance_sensor/laser_1_sub", 10);
+		//pubFusedDistance = n_.advertise<sensor_msgs::Range>("/mavros/distance_sensor/laser_1_sub", 10);
+		pubFusedDistance = n_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
 
 		// initialization
 		rate = 20;
@@ -27,9 +29,10 @@ public:
 		_distanceForward = 0;
 		_distanceBackward = 0;
 
-		fused_distance.radiation_type = sensor_msgs::Range::INFRARED;
-		fused_distance.min_range = 0.5;
-		fused_distance.max_range = 40.0;
+		//fused_distance.radiation_type = sensor_msgs::Range::INFRARED;
+		//fused_distance.min_range = 0.5;
+		//fused_distance.max_range = 40.0;
+		fused_distance.pose.position.z = 0;
 	}
 
 	void readDistanceMiddle(const sensor_msgs::Range::ConstPtr& msg)
@@ -53,12 +56,17 @@ public:
 		float m,b;
 		if (min == _distanceForward){
 			calcualte_plane(_distanceMiddle, _distanceForward, true, &m, &b);
+			ROS_INFO("Forward. Distances: %.3f, %.3f. Plane m: %.3f b: %.3f. D: %.3f",_distanceMiddle,_distanceForward);
 		} else {
 			calcualte_plane(_distanceMiddle, _distanceBackward, false, &m, &b);
+			ROS_INFO("Forward. Distances: %.3f, %.3f. Plane m: %.3f b: %.3f. D: %.3f",_distanceMiddle,_distanceBackward);
 		}
-		//TODO calculate real distance
 		fused_distance.header.stamp = ros::Time::now();
-		fused_distance.range = _distanceMiddle;
+		//fused_distance.range = _distanceMiddle;					//distance for distance_sensor message
+		float d = sqrt(pow(b, 2.0)/(pow(m, 2.0)+1.0));		//minimum distance from center sensor to plane
+
+		fused_distance.pose.position.z = d;			//pose for mocap message
+		ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,d);
 		pubFusedDistance.publish(fused_distance);
 	}
 
@@ -82,7 +90,6 @@ public:
 		b_temp = y1-m_temp*x1;
 		*m = m_temp;
 		*b = b_temp;
-		ROS_INFO("Forward: %s. Distances: %f, %f. Plane m: %f b: %f",forward?"true":"false",d1,d2,m_temp,b_temp);
 	}
 
 
@@ -116,7 +123,8 @@ protected:
 	float _distanceMiddle;
 	float _distanceForward;
 	float _distanceBackward;
-	sensor_msgs::Range	fused_distance;
+	//sensor_msgs::Range	fused_distance;
+	geometry_msgs::PoseStamped fused_distance;
 
 	int rate;
 	bool use_global_altitude;
