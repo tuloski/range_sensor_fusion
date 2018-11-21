@@ -26,6 +26,10 @@ public:
 		_distanceMiddle = 0;
 		_distanceForward = 0;
 		_distanceBackward = 0;
+
+		fused_distance.radiation_type = sensor_msgs::Range::INFRARED;
+		fused_distance.min_range = 0.5;
+		fused_distance.max_range = 40.0;
 	}
 
 	void readDistanceMiddle(const sensor_msgs::Range::ConstPtr& msg)
@@ -52,6 +56,9 @@ public:
 		} else {
 			calcualte_plane(_distanceMiddle, _distanceBackward, false, &m, &b);
 		}
+		//TODO calculate real distance
+		fused_distance.header.stamp = ros::Time::now();
+		fused_distance.range = _distanceMiddle;
 		pubFusedDistance.publish(fused_distance);
 	}
 
