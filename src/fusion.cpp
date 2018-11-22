@@ -3,6 +3,7 @@
 //#include <mavros/Sonar.h>
 #include <sensor_msgs/Range.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 
 class RangefusionClass
 {
@@ -17,7 +18,7 @@ public:
 		subDistanceMiddle = n_.subscribe("/distance_middle", 10, &RangefusionClass::readDistanceMiddle,this);
 		subDistanceForward = n_.subscribe("/distance_forward", 10, &RangefusionClass::readDistanceForward,this);
 		subDistanceBackward = n_.subscribe("/distance_backward", 10, &RangefusionClass::readDistanceBackward,this);
-		//TODO sub to speed to calculate the point prediction?
+		subVelocity = n_.subscribe("/mavros/local_position/velocity", 10, &RangefusionClass::readVelocities,this);
 
 		// publishers
 		//pubFusedDistance = n_.advertise<sensor_msgs::Range>("/mavros/distance_sensor/laser_1_sub", 10);
@@ -29,9 +30,6 @@ public:
 		_distanceForward = 0;
 		_distanceBackward = 0;
 
-		//fused_distance.radiation_type = sensor_msgs::Range::INFRARED;
-		//fused_distance.min_range = 0.5;
-		//fused_distance.max_range = 40.0;
 		fused_distance.pose.position.z = 0;
 	}
 
@@ -50,23 +48,38 @@ public:
 		_distanceBackward = msg->range;
 	}
 
+	void readVelocities(const geometry_msgs::TwistStamped::ConstPtr& msg)
+	{
+		_vx = msg->twist.linear.x;
+	}
+
 	void main()
 	{
 		float min = std::min(_distanceForward, _distanceBackward);
 		float m,b;
 		if (min == _distanceForward){
 			calcualte_plane(_distanceMiddle, _distanceForward, true, &m, &b);
-			ROS_INFO("Forward. Distances: %.3f, %.3f. Plane m: %.3f b: %.3f. D: %.3f",_distanceMiddle,_distanceForward);
+			ROS_INFO("Forward. Distances: %.3f, %.3f.",_distanceMiddle,_distanceForward);
 		} else {
 			calcualte_plane(_distanceMiddle, _distanceBackward, false, &m, &b);
-			ROS_INFO("Forward. Distances: %.3f, %.3f. Plane m: %.3f b: %.3f. D: %.3f",_distanceMiddle,_distanceBackward);
+			ROS_INFO("Forward. Distances: %.3f, %.3f.",_distanceMiddle,_distanceBackward);
 		}
 		fused_distance.header.stamp = ros::Time::now();
 		//fused_distance.range = _distanceMiddle;					//distance for distance_sensor message
 		float d = sqrt(pow(b, 2.0)/(pow(m, 2.0)+1.0));		//minimum distance from center sensor to plane
-
-		fused_distance.pose.position.z = d;			//pose for mocap message
-		ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,d);
+		float theta = atan(m);
+		float ix,iy;
+		ix = cos(theta);
+		iy = sin(theta);
+		float p0x, p0y, p1x, p1y;
+		p0x = -(b*m)/(pow(m, 2.0)+1);
+		p0y = b/(pow(m, 2.0)+1);
+		p1x = p0x + _k*_vx*ix;
+		p1y = p0y + _k*_vx*iy;
+		float d1 = sqrt(pow(p1x, 2.0)+pow(p1y, 2.0));		//minimum distance from center sensor to plane with correction based on velocity
+		//TODO decide with param if using the velocity-corrected d1 or the non velocity-corrected d
+		fused_distance.pose.position.z = d1;			//pose for mocap message
+		ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,d1);
 		pubFusedDistance.publish(fused_distance);
 	}
 
@@ -116,6 +129,7 @@ protected:
 	ros::Subscriber subDistanceMiddle;
 	ros::Subscriber subDistanceForward;
 	ros::Subscriber subDistanceBackward;
+	ros::Subscriber subVelocity;
 
 	// publisher
 	ros::Publisher pubFusedDistance;
@@ -123,8 +137,9 @@ protected:
 	float _distanceMiddle;
 	float _distanceForward;
 	float _distanceBackward;
-	//sensor_msgs::Range	fused_distance;
 	geometry_msgs::PoseStamped fused_distance;
+	float _vx;
+	const float _k = 0.5;
 
 	int rate;
 	bool use_global_altitude;
