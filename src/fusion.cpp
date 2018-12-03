@@ -21,8 +21,8 @@ public:
 		subVelocity = n_.subscribe("/mavros/local_position/velocity", 10, &RangefusionClass::readVelocities,this);
 
 		// publishers
-		//pubFusedDistance = n_.advertise<sensor_msgs::Range>("/mavros/distance_sensor/laser_1_sub", 10);
-		pubFusedDistance = n_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
+		pubFusedDistance = n_.advertise<sensor_msgs::Range>("/mavros/distance_sensor/laser_1_sub", 10);
+		//pubFusedDistance = n_.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
 
 		// initialization
 		rate = 20;
@@ -30,7 +30,10 @@ public:
 		_distanceForward = 0;
 		_distanceBackward = 0;
 
-		fused_distance.pose.position.z = 0;
+		//fused_distance.pose.position.z = 0;		//EV
+		fused_distance.range = 0;		//distance
+		fused_distance.min_range = 0.1;
+		fused_distance.max_range = 40.0;
 	}
 
 	void readDistanceMiddle(const sensor_msgs::Range::ConstPtr& msg)
@@ -65,7 +68,6 @@ public:
 			ROS_INFO("Forward. Distances: %.3f, %.3f.",_distanceMiddle,_distanceBackward);
 		}
 		fused_distance.header.stamp = ros::Time::now();
-		//fused_distance.range = _distanceMiddle;					//distance for distance_sensor message
 		float d = sqrt(pow(b, 2.0)/(pow(m, 2.0)+1.0));		//minimum distance from center sensor to plane
 		float theta = atan(m);
 		float ix,iy;
@@ -78,8 +80,13 @@ public:
 		p1y = p0y + _k*_vx*iy;
 		float d1 = sqrt(pow(p1x, 2.0)+pow(p1y, 2.0));		//minimum distance from center sensor to plane with correction based on velocity
 		//TODO decide with param if using the velocity-corrected d1 or the non velocity-corrected d
-		fused_distance.pose.position.z = d1;			//pose for mocap message
-		ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,d1);
+		//fused_distance.pose.position.z = d1;			//pose for mocap message. Using velocity and attitude.
+		
+		//fused_distance.pose.position.z = alpha_lp*fused_distance.pose.position.z + d*(1-alpha_lp);				//pose for mocap message. Raw plane estimation.		//EV
+		//ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,fused_distance.pose.position.z);	//EV
+		fused_distance.range = d;					//distance for distance_sensor message		//distance
+		ROS_INFO("Plane m: %.3f b: %.3f. D: %.3f",m,b,d);			//distance
+		
 		pubFusedDistance.publish(fused_distance);
 	}
 
@@ -137,13 +144,14 @@ protected:
 	float _distanceMiddle;
 	float _distanceForward;
 	float _distanceBackward;
-	geometry_msgs::PoseStamped fused_distance;
+	//geometry_msgs::PoseStamped fused_distance;	//EV
+	sensor_msgs::Range fused_distance;			//distance
 	float _vx;
 	const float _k = 0.5;
 
 	int rate;
 	bool use_global_altitude;
-
+	const float alpha_lp = 0.2;	//LP filter
 };
 
 int main(int argc, char **argv)
